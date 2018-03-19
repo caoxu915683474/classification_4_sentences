@@ -1,0 +1,135 @@
+---
+
+- module: "pipeline"
+  pipeline:
+    preprocess: 0
+    analyse: 0
+    train: 0
+    ensemble_train: 0
+    test: 0
+    ensemble_test: 1
+
+- module: preprocess
+  input_file: "./data3/train"
+  output_file: "./data3/preprocessed.csv"
+  params:
+    lang: zh
+    en:
+      lowercase: 1
+      remove_html: 1
+      join_urls: 1
+      use_bigrams: 0
+      use_ner: 0
+      stanford_ner_path: "./stanfordNLP/stanford-ner/"
+      use_lemmatizer: 1
+      use_stemmer: 0
+    zh:
+      lowercase: 1
+      remove_html: 1
+      remove_or_replace_urls: ""
+      half_width: 1
+      custom_pattern_path: []
+      replace_ner: 0
+      stanford_corenlp_path: "./stanfordNLP/stanford-corenlp-full-2017-06-09"
+      char_segmentation: 1
+      replace_number: 1
+      convert_t2s: 1
+      convert_s2t: 0
+
+- module: analyse
+  input_file: "./data3/preprocessed.csv"
+  output_dir: "./analyse_result/"
+  params:
+    basic:
+      balance_or_not: 1
+      label_type: 1
+    feature_engineer:
+      lda:
+        use_lda: 1
+      tf_idf:
+        use_tf_idf: 0
+        type: cate
+      rake:
+        use_rake: 1
+        type: cate
+        rake_param:
+          - 1   # min_char_length
+          - 1   # max_words_length
+          - 15  # min_keyword_frequency 
+      word2vec:
+        use_word2vec: 0
+        output_path: "./w2v_100d.txt"
+        word2vec_param:
+          - 100 # dimension
+          - 1   # min_count
+          - 5   # window
+      textrank:
+        use_textrank: 0
+        textrank_window: 2
+      onehot:
+        use_onehot: 1
+        type: bow
+        topK: 10000
+      stop_word_path: "./stopword.txt"
+
+- module: train
+  params:
+    data_helper:
+      input_file: "./data/preprocessed.csv"
+      model_save_path: "./runs/word_cnn/"
+      word_emb_mode: 1 # 1:one-hot 0:word2vec
+      word_emb_path: "./analyse_result/_onehot_result.txt"
+      n_class: 7
+      task_type: 1 # 1:multi-labeling 0:classify
+      seq_len: 50
+      batch_size: 64
+      early_stop: True
+      evaluate_every: 150
+    model:
+      name: Word_CNN # Bi_GRU #
+      # optimizer: adam
+      # lr: 0.001
+      # epsilon: 1e-8
+
+- module: ensemble_train
+  params:
+    ensemble_method: "Stack"
+    input_file: "./data/preprocessed.csv"
+    data_helper:
+      word_emb_mode: 1 # 1:one-hot 0:word2vec
+      word_emb_path: "./analyse_result/_onehot_result.txt"
+      seq_len: 50
+    model:
+      model_paths: 
+        - "./runs/word_cnn/model-150"
+        - "./runs/word_cnn/model-750"
+      output_folder: "/home/yuan/test_output/"
+      result_type: "label"
+      method: "vote"
+
+- module: test
+  params:
+    input_file: "./data/test.csv"
+    output_file: "./data/preprocessed.csv"
+    data_helper:
+      word_emb_mode: 1
+      word_emb_path: "./analyse_result/_onehot_result.txt"
+      seq_len: 50
+    model:
+      model_path: "./runs/word_cnn/model-150"
+      result_type: "label" # label or probs
+
+- module: ensemble_test
+  params:
+    input_file: "./data/test.csv"
+    output_file: "./data/preprocessed.csv"
+    ensemble_method: "Stack"
+    data_helper:
+      word_emb_mode: 1
+      word_emb_path: "./analyse_result/_onehot_result.txt"
+      seq_len: 50
+    model:
+      model_folder: "/home/yuan/test_output/*"
+      result_type: "label"
+      method: "average" # average linear logistic vote
+
